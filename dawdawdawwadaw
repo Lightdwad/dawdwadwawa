@@ -602,6 +602,25 @@ end)
 Players.LocalPlayer.OnTeleport:Connect(function()
 	queue_on_teleport('loadstring(game:HttpGet("https://raw.githubusercontent.com/Lightdwad/dawdwadwawa/refs/heads/main/dawdawdawwadaw"))()') 
 end)
+---------------------------------------------------------------------
+-- 🔄 Injection Detection & Cleanup
+---------------------------------------------------------------------
+local SCRIPT_ID = "RivalsScript_" .. tostring(math.random(1000000, 9999999))
+local function cleanupOldInjection()
+	local oldMarker = game:GetService("ReplicatedStorage"):FindFirstChild("RivalsScriptMarker")
+	if oldMarker then
+		oldMarker:Destroy()
+		local oldScreenGui = game:GetService("Players").LocalPlayer.PlayerGui:FindFirstChild("RivalsHUD")
+		if oldScreenGui then oldScreenGui:Destroy() end
+		local oldLeaderboard = game:GetService("Players").LocalPlayer.PlayerGui:FindFirstChild("RivalsLeaderboard")
+		if oldLeaderboard then oldLeaderboard:Destroy() end
+	end
+end
+cleanupOldInjection()
+local marker = Instance.new("StringValue")
+marker.Name = "RivalsScriptMarker"
+marker.Value = SCRIPT_ID
+marker.Parent = game:GetService("ReplicatedStorage")
 
 -------------------------------------------------------------
 -- ⌨️ Keybinds (UPDATED: both F4 and End toggle HUD + Leaderboard)
