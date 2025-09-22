@@ -297,6 +297,13 @@ local function getPlayerStreak(p)
 	return 0
 end
 
+local function getAccountAge(p)
+	local ok, age = pcall(function()
+		return p.AccountAge
+	end)
+	return ok and age or 0
+end
+
 -- shorten name helper
 local function shortName(name, maxLen)
 	maxLen = maxLen or 12
@@ -327,28 +334,24 @@ local function refreshBoard()
 			-- If you want to show everyone regardless, you can remove the conditional.
 			if level ~= 0 or streak ~= 0 or elo ~= 0 or p.Name == LocalPlayer.Name then
 				local rank = getRankFromElo(elo)
+				local accountAge = getAccountAge(p)
 				table.insert(entries, {
 					name = p.Name,
 					streak = streak,
 					level = level,
 					elo = elo,
-					rank = rank
+					rank = rank,
+					accountAge = accountAge
 				})
 			end
 		end
 	end
 
-	-- sort by ELO (primary), Level (secondary), WinStreak (tertiary)
+	-- sort by account age (smallest to highest) but local player always first
 	table.sort(entries, function(a,b)
-		if a.elo == b.elo then
-			if a.level == b.level then
-				return a.streak > b.streak
-			else
-				return a.level > b.level
-			end
-		else
-			return a.elo > b.elo
-		end
+		if a.name == LocalPlayer.Name then return true end
+		if b.name == LocalPlayer.Name then return false end
+		return a.accountAge < b.accountAge
 	end)
 
 	-- create/update rows (keeps your previous UI layout)
@@ -380,8 +383,8 @@ local function refreshBoard()
 		local short = shortName(e.name, 12)
 		local eloColor = eloColorByRank(e.rank)
 		row.Text = string.format(
-			"<font color='%s'>#%d</font> [Lvl %s] %s | <font color='%s'>WS: %s</font> | <font color='%s'>ELO: %d (%s)</font>",
-			placeColor, i, tostring(e.level), short, streakColor, tostring(e.streak), eloColor, e.elo, e.rank
+			"[%s] %s | <font color='%s'>WS: %s</font> | <font color='%s'>ELO: %d (%s)</font> | Age: %dd",
+			tostring(e.level), short, streakColor, tostring(e.streak), eloColor, e.elo, e.rank, e.accountAge
 		)
 	end
 
